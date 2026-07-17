@@ -1,0 +1,12 @@
+// Cloudflare configuration — deploy with `npm run build && npx wrangler deploy`
+// (or connect the repo to Cloudflare Workers & Pages in the dashboard with
+// build command `npm run build` and output directory `dist`).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "life-app",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
