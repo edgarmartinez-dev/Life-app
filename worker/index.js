@@ -3,15 +3,32 @@
 
 const json = (data, status = 200) => Response.json(data, { status })
 const toTodo = (r) => ({ ...r, completed: !!r.completed })
+const toMed = (r) => ({ ...r, active: !!r.active })
+
+// Thrown for bad input → 400 rather than a 500 crash.
+class ClientError extends Error {}
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
-    const match = url.pathname.match(/^\/api\/todos(?:\/([\w-]+))?$/)
-    if (!match) return json({ error: 'not found' }, 404)
-    const id = match[1]
-
     try {
+      if (/^\/api\/medications(\/|$)/.test(url.pathname))
+        return await medications(request, env, url)
+      return await todos(request, env, url)
+    } catch (err) {
+      if (err instanceof ClientError) return json({ error: err.message }, 400)
+      return json({ error: String(err) }, 500)
+    }
+  },
+}
+
+async function todos(request, env, url) {
+  const match = url.pathname.match(/^\/api\/todos(?:\/([\w-]+))?$/)
+  if (!match) return json({ error: 'not found' }, 404)
+  const id = match[1]
+
+  {
+    {
       if (request.method === 'GET' && !id) {
         const { results } = await env.DB.prepare(
           'SELECT * FROM todos ORDER BY completed ASC, position ASC',
@@ -72,8 +89,128 @@ export default {
       }
 
       return json({ error: 'method not allowed' }, 405)
-    } catch (err) {
-      return json({ error: String(err) }, 500)
     }
-  },
+  }
+}
+
+// Comma-separated HH:MM string; drops blanks, sorts, dedupes. "" → "".
+function normalizeTimes(input) {
+  if (typeof input !== 'string') return ''
+  const times = [...new Set(input.split(',').map((t) => t.trim()).filter(Boolean))]
+  if (times.some((t) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(t)))
+    throw new ClientError('times must be HH:MM')
+  return times.sort().join(',')
+}
+
+async function medications(request, env, url) {
+  // /api/medications, /api/medications/<id>, /api/medications/logs
+  const rest = url.pathname.replace(/^\/api\/medications\/?/, '')
+  const method = request.method
+
+  // --- dose logs: /api/medications/logs ---
+  if (rest === 'logs') {
+    if (method === 'GET') {
+      const date = url.searchParams.get('date')
+      if (!date) return json({ error: 'date required' }, 400)
+      const { results } = await env.DB.prepare(
+        'SELECT * FROM medication_logs WHERE date = ?',
+      )
+        .bind(date)
+        .all()
+      return json(results)
+    }
+    if (method === 'POST') {
+      const { medication_id, date, slot } = await request.json()
+      if (!medication_id || typeof date !== 'string' || !Number.isInteger(slot))
+        return json({ error: 'medication_id, date, slot required' }, 400)
+      // idempotent: re-taking an already-logged dose is a no-op, returns the row
+      const row = await env.DB.prepare(
+        `INSERT INTO medication_logs (id, medication_id, date, slot) VALUES (?, ?, ?, ?)
+         ON CONFLICT (medication_id, date, slot) DO UPDATE SET medication_id = medication_id
+         RETURNING *`,
+      )
+        .bind(crypto.randomUUID(), medication_id, date, slot)
+        .first()
+      return json(row, 201)
+    }
+    if (method === 'DELETE') {
+      const { medication_id, date, slot } = await request.json()
+      await env.DB.prepare(
+        'DELETE FROM medication_logs WHERE medication_id = ? AND date = ? AND slot = ?',
+      )
+        .bind(medication_id, date, slot)
+        .run()
+      return json({ ok: true })
+    }
+    return json({ error: 'method not allowed' }, 405)
+  }
+
+  // --- medication definitions ---
+  const id = rest || null
+  if (id && !/^[\w-]+$/.test(id)) return json({ error: 'not found' }, 404)
+
+  if (method === 'GET' && !id) {
+    const { results } = await env.DB.prepare(
+      'SELECT * FROM medications ORDER BY active DESC, position ASC',
+    ).all()
+    return json(results.map(toMed))
+  }
+
+  if (method === 'POST' && !id) {
+    const { name, dose, times, notes } = await request.json()
+    if (typeof name !== 'string' || !name.trim() || name.length > 200)
+      return json({ error: 'name must be 1-200 characters' }, 400)
+    const row = await env.DB.prepare(
+      `INSERT INTO medications (id, name, dose, times, notes, position)
+       VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM medications))
+       RETURNING *`,
+    )
+      .bind(crypto.randomUUID(), name.trim(), dose?.trim() || null, normalizeTimes(times), notes?.trim() || null)
+      .first()
+    return json(toMed(row), 201)
+  }
+
+  if (method === 'PATCH' && id) {
+    const body = await request.json()
+    const fields = []
+    const values = []
+    if (typeof body.name === 'string' && body.name.trim()) {
+      fields.push('name = ?')
+      values.push(body.name.trim())
+    }
+    if ('dose' in body) {
+      fields.push('dose = ?')
+      values.push(body.dose?.trim() || null)
+    }
+    if ('times' in body) {
+      fields.push('times = ?')
+      values.push(normalizeTimes(body.times))
+    }
+    if ('notes' in body) {
+      fields.push('notes = ?')
+      values.push(body.notes?.trim() || null)
+    }
+    if (typeof body.active === 'boolean') {
+      fields.push('active = ?')
+      values.push(body.active ? 1 : 0)
+    }
+    if (!fields.length) return json({ error: 'nothing to update' }, 400)
+    const row = await env.DB.prepare(
+      `UPDATE medications SET ${fields.join(', ')} WHERE id = ? RETURNING *`,
+    )
+      .bind(...values, id)
+      .first()
+    return row ? json(toMed(row)) : json({ error: 'not found' }, 404)
+  }
+
+  if (method === 'DELETE' && id) {
+    // D1 doesn't enforce ON DELETE CASCADE by default — drop logs explicitly
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM medication_logs WHERE medication_id = ?').bind(id),
+      env.DB.prepare('DELETE FROM medications WHERE id = ?').bind(id),
+    ])
+    return json({ ok: true })
+  }
+
+  return json({ error: 'method not allowed' }, 405)
 }
