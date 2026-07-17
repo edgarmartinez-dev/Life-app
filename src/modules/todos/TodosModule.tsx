@@ -19,23 +19,14 @@ function makeBuckets(): Bucket[] {
   // Monday of the current week
   const mondayOffset = -((new Date().getDay() + 6) % 7)
   const week = Array.from({ length: 7 }, (_, i) => dayStr(mondayOffset + i))
-  return [
-    {
-      id: 'inbox',
-      label: 'Inbox',
-      title: 'Inbox — no day yet',
-      date: null,
-      match: (t: Todo) => !t.due_date,
-    },
-    ...week.map((d) => ({
-      id: d,
-      label: weekdayShort(d),
-      title: `Due: ${longDate(d)}`,
-      date: d,
-      isToday: d === today,
-      match: (t: Todo) => t.due_date === d,
-    })),
-  ]
+  return week.map((d) => ({
+    id: d,
+    label: weekdayShort(d),
+    title: `Due: ${longDate(d)}`,
+    date: d,
+    isToday: d === today,
+    match: (t: Todo) => t.due_date === d,
+  }))
 }
 
 export default function TodosModule() {
@@ -48,10 +39,9 @@ export default function TodosModule() {
 
   const buckets = useMemo(makeBuckets, [])
   const selected = buckets.find((b) => b.id === selectedId) ?? buckets.find((b) => b.isToday)!
-  // Prefill from the selected tab: Inbox → no date; past weekday → today
+  // Prefill from the selected day tab; past weekday → today
   const dueDate =
-    dueOverride ??
-    (selected.date ? (selected.date >= dayStr(0) ? selected.date : dayStr(0)) : '')
+    dueOverride ?? (selected.date! >= dayStr(0) ? selected.date! : dayStr(0))
 
   const stripRef = useRef<HTMLDivElement>(null)
   useEffect(() => {

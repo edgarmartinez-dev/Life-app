@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import TodosModule from './todos/TodosModule'
+import InboxModule from './todos/InboxModule'
 
 export interface LifeModule {
   id: string
@@ -24,6 +25,14 @@ export const modules: LifeModule[] = [
     description: 'Tasks and daily checklist',
     status: 'active',
     component: TodosModule,
+  },
+  {
+    id: 'inbox',
+    name: 'Inbox',
+    icon: '📥',
+    description: 'Tasks without a day, or beyond this week',
+    status: 'active',
+    component: InboxModule,
   },
   {
     id: 'medications',
