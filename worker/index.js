@@ -4,6 +4,7 @@
 const json = (data, status = 200) => Response.json(data, { status })
 const toTodo = (r) => ({ ...r, completed: !!r.completed })
 const toMed = (r) => ({ ...r, active: !!r.active })
+const toHabit = (r) => ({ ...r, active: !!r.active })
 
 // Thrown for bad input → 400 rather than a 500 crash.
 class ClientError extends Error {}
@@ -14,6 +15,8 @@ export default {
     try {
       if (/^\/api\/medications(\/|$)/.test(url.pathname))
         return await medications(request, env, url)
+      if (/^\/api\/habits(\/|$)/.test(url.pathname))
+        return await habits(request, env, url)
       return await todos(request, env, url)
     } catch (err) {
       if (err instanceof ClientError) return json({ error: err.message }, 400)
@@ -91,6 +94,124 @@ async function todos(request, env, url) {
       return json({ error: 'method not allowed' }, 405)
     }
   }
+}
+
+const PARTS = ['morning', 'afternoon', 'evening', 'anytime']
+
+// Comma-separated weekday numbers 0-6; drops blanks, sorts, dedupes. "" → every day.
+function normalizeDays(input) {
+  if (typeof input !== 'string') return ''
+  const days = [...new Set(input.split(',').map((d) => d.trim()).filter(Boolean))]
+  if (days.some((d) => !/^[0-6]$/.test(d))) throw new ClientError('days must be 0-6')
+  return days.sort().join(',')
+}
+
+async function habits(request, env, url) {
+  // /api/habits, /api/habits/<id>, /api/habits/logs
+  const rest = url.pathname.replace(/^\/api\/habits\/?/, '')
+  const method = request.method
+
+  // --- done logs: /api/habits/logs ---
+  if (rest === 'logs') {
+    if (method === 'GET') {
+      const date = url.searchParams.get('date')
+      if (!date) return json({ error: 'date required' }, 400)
+      const { results } = await env.DB.prepare('SELECT * FROM habit_logs WHERE date = ?')
+        .bind(date)
+        .all()
+      return json(results)
+    }
+    if (method === 'POST') {
+      const { habit_id, date } = await request.json()
+      if (!habit_id || typeof date !== 'string')
+        return json({ error: 'habit_id, date required' }, 400)
+      const row = await env.DB.prepare(
+        `INSERT INTO habit_logs (id, habit_id, date) VALUES (?, ?, ?)
+         ON CONFLICT (habit_id, date) DO UPDATE SET habit_id = habit_id RETURNING *`,
+      )
+        .bind(crypto.randomUUID(), habit_id, date)
+        .first()
+      return json(row, 201)
+    }
+    if (method === 'DELETE') {
+      const { habit_id, date } = await request.json()
+      await env.DB.prepare('DELETE FROM habit_logs WHERE habit_id = ? AND date = ?')
+        .bind(habit_id, date)
+        .run()
+      return json({ ok: true })
+    }
+    return json({ error: 'method not allowed' }, 405)
+  }
+
+  // --- habit definitions ---
+  const id = rest || null
+  if (id && !/^[\w-]+$/.test(id)) return json({ error: 'not found' }, 404)
+
+  if (method === 'GET' && !id) {
+    const { results } = await env.DB.prepare(
+      'SELECT * FROM habits ORDER BY active DESC, position ASC',
+    ).all()
+    return json(results.map(toHabit))
+  }
+
+  if (method === 'POST' && !id) {
+    const { name, part, days, notes } = await request.json()
+    if (typeof name !== 'string' || !name.trim() || name.length > 200)
+      return json({ error: 'name must be 1-200 characters' }, 400)
+    if (part != null && !PARTS.includes(part)) return json({ error: 'bad part' }, 400)
+    const row = await env.DB.prepare(
+      `INSERT INTO habits (id, name, part, days, notes, position)
+       VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM habits))
+       RETURNING *`,
+    )
+      .bind(crypto.randomUUID(), name.trim(), part ?? 'anytime', normalizeDays(days), notes?.trim() || null)
+      .first()
+    return json(toHabit(row), 201)
+  }
+
+  if (method === 'PATCH' && id) {
+    const body = await request.json()
+    const fields = []
+    const values = []
+    if (typeof body.name === 'string' && body.name.trim()) {
+      fields.push('name = ?')
+      values.push(body.name.trim())
+    }
+    if ('part' in body) {
+      if (!PARTS.includes(body.part)) return json({ error: 'bad part' }, 400)
+      fields.push('part = ?')
+      values.push(body.part)
+    }
+    if ('days' in body) {
+      fields.push('days = ?')
+      values.push(normalizeDays(body.days))
+    }
+    if ('notes' in body) {
+      fields.push('notes = ?')
+      values.push(body.notes?.trim() || null)
+    }
+    if (typeof body.active === 'boolean') {
+      fields.push('active = ?')
+      values.push(body.active ? 1 : 0)
+    }
+    if (!fields.length) return json({ error: 'nothing to update' }, 400)
+    const row = await env.DB.prepare(
+      `UPDATE habits SET ${fields.join(', ')} WHERE id = ? RETURNING *`,
+    )
+      .bind(...values, id)
+      .first()
+    return row ? json(toHabit(row)) : json({ error: 'not found' }, 404)
+  }
+
+  if (method === 'DELETE' && id) {
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM habit_logs WHERE habit_id = ?').bind(id),
+      env.DB.prepare('DELETE FROM habits WHERE id = ?').bind(id),
+    ])
+    return json({ ok: true })
+  }
+
+  return json({ error: 'method not allowed' }, 405)
 }
 
 // Comma-separated HH:MM string; drops blanks, sorts, dedupes. "" → "".
