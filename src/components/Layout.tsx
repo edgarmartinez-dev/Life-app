@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { useAuth } from '../auth/AuthProvider'
 import { modules, type LifeModule } from '../modules/registry'
 
 interface LayoutProps {
@@ -9,8 +8,6 @@ interface LayoutProps {
 }
 
 export default function Layout({ activeModuleId, onSelectModule, children }: LayoutProps) {
-  const { session, signOut } = useAuth()
-
   const renderModuleLink = (mod: LifeModule) => (
     <li key={mod.id}>
       <button
@@ -55,15 +52,6 @@ export default function Layout({ activeModuleId, onSelectModule, children }: Lay
           </div>
 
           <ul className="menu w-full p-0 gap-1 flex-1">{modules.map(renderModuleLink)}</ul>
-
-          <div className="border-t border-base-300 pt-3 flex items-center justify-between gap-2">
-            <span className="text-xs text-base-content/60 truncate" title={session?.user.email}>
-              {session?.user.email}
-            </span>
-            <button type="button" className="btn btn-ghost btn-xs" onClick={signOut}>
-              Sign out
-            </button>
-          </div>
         </div>
       </aside>
     </div>

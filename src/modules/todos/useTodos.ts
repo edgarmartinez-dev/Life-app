@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '../../lib/supabase'
 import type { Todo } from './types'
+
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api/todos${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error((body as { error?: string } | null)?.error ?? res.statusText)
+  }
+  return res.json() as Promise<T>
+}
 
 export function useTodos() {
   const [todos, setTodos] = useState<Todo[]>([])
@@ -8,16 +19,11 @@ export function useTodos() {
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const { data, error: err } = await supabase!
-      .from('todos')
-      .select('*')
-      .order('completed', { ascending: true })
-      .order('created_at', { ascending: false })
-    if (err) {
-      setError(err.message)
-    } else {
-      setTodos(data as Todo[])
+    try {
+      setTodos(await api<Todo[]>(''))
       setError(null)
+    } catch (err) {
+      setError((err as Error).message)
     }
     setLoading(false)
   }, [])
@@ -27,48 +33,48 @@ export function useTodos() {
   }, [load])
 
   const addTodo = async (title: string, dueDate: string | null) => {
-    const user = (await supabase!.auth.getUser()).data.user
-    if (!user) return
-    const { data, error: err } = await supabase!
-      .from('todos')
-      .insert({ title, due_date: dueDate, user_id: user.id })
-      .select()
-      .single()
-    if (err) {
-      setError(err.message)
-      return
+    try {
+      const todo = await api<Todo>('', {
+        method: 'POST',
+        body: JSON.stringify({ title, due_date: dueDate }),
+      })
+      setTodos((prev) => [todo, ...prev])
+    } catch (err) {
+      setError((err as Error).message)
     }
-    setTodos((prev) => [data as Todo, ...prev])
   }
 
   const toggleTodo = async (todo: Todo) => {
     setTodos((prev) =>
       prev.map((t) => (t.id === todo.id ? { ...t, completed: !t.completed } : t)),
     )
-    const { error: err } = await supabase!
-      .from('todos')
-      .update({ completed: !todo.completed })
-      .eq('id', todo.id)
-    if (err) {
-      setError(err.message)
+    try {
+      await api(`/${todo.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ completed: !todo.completed }),
+      })
+    } catch (err) {
+      setError((err as Error).message)
       load()
     }
   }
 
   const updateTitle = async (todo: Todo, title: string) => {
     setTodos((prev) => prev.map((t) => (t.id === todo.id ? { ...t, title } : t)))
-    const { error: err } = await supabase!.from('todos').update({ title }).eq('id', todo.id)
-    if (err) {
-      setError(err.message)
+    try {
+      await api(`/${todo.id}`, { method: 'PATCH', body: JSON.stringify({ title }) })
+    } catch (err) {
+      setError((err as Error).message)
       load()
     }
   }
 
   const deleteTodo = async (todo: Todo) => {
     setTodos((prev) => prev.filter((t) => t.id !== todo.id))
-    const { error: err } = await supabase!.from('todos').delete().eq('id', todo.id)
-    if (err) {
-      setError(err.message)
+    try {
+      await api(`/${todo.id}`, { method: 'DELETE' })
+    } catch (err) {
+      setError((err as Error).message)
       load()
     }
   }

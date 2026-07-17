@@ -1,12 +1,21 @@
-// Cloudflare configuration — deploy with `npm run build && npx wrangler deploy`
-// (or connect the repo to Cloudflare Workers & Pages in the dashboard with
-// build command `npm run build` and output directory `dist`).
+// Deploy: npm run build && npx wrangler deploy
+// D1 backup = Time Travel: point-in-time restore, automatic, zero config
+// (npx wrangler d1 time-travel restore life-app-db --timestamp=...)
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "life-app",
+  "main": "worker/index.js",
   "compatibility_date": "2026-07-01",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
-  }
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "life-app-db",
+      "database_id": "375b1374-9007-4deb-b629-11014907ebef"
+    }
+  ]
 }
