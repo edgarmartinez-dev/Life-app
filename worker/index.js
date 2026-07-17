@@ -14,19 +14,21 @@ export default {
     try {
       if (request.method === 'GET' && !id) {
         const { results } = await env.DB.prepare(
-          'SELECT * FROM todos ORDER BY completed ASC, created_at DESC',
+          'SELECT * FROM todos ORDER BY completed ASC, position ASC',
         ).all()
         return json(results.map(toTodo))
       }
 
       if (request.method === 'POST' && !id) {
-        const { title, due_date } = await request.json()
+        const { title, due_date, due_time } = await request.json()
         if (typeof title !== 'string' || !title.trim() || title.length > 500)
           return json({ error: 'title must be 1-500 characters' }, 400)
+        // new tasks go to the top: position = current min - 1
         const row = await env.DB.prepare(
-          'INSERT INTO todos (id, title, due_date) VALUES (?, ?, ?) RETURNING *',
+          `INSERT INTO todos (id, title, due_date, due_time, position)
+           VALUES (?, ?, ?, ?, (SELECT COALESCE(MIN(position), 1) - 1 FROM todos)) RETURNING *`,
         )
-          .bind(crypto.randomUUID(), title.trim(), due_date ?? null)
+          .bind(crypto.randomUUID(), title.trim(), due_date ?? null, due_time ?? null)
           .first()
         return json(toTodo(row), 201)
       }
@@ -46,6 +48,14 @@ export default {
         if ('due_date' in body) {
           fields.push('due_date = ?')
           values.push(body.due_date)
+        }
+        if ('due_time' in body) {
+          fields.push('due_time = ?')
+          values.push(body.due_time)
+        }
+        if (typeof body.position === 'number' && Number.isFinite(body.position)) {
+          fields.push('position = ?')
+          values.push(body.position)
         }
         if (!fields.length) return json({ error: 'nothing to update' }, 400)
         const row = await env.DB.prepare(

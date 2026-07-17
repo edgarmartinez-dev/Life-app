@@ -32,11 +32,11 @@ export function useTodos() {
     load()
   }, [load])
 
-  const addTodo = async (title: string, dueDate: string | null) => {
+  const addTodo = async (title: string, dueDate: string | null, dueTime: string | null = null) => {
     try {
       const todo = await api<Todo>('', {
         method: 'POST',
-        body: JSON.stringify({ title, due_date: dueDate }),
+        body: JSON.stringify({ title, due_date: dueDate, due_time: dueTime }),
       })
       setTodos((prev) => [todo, ...prev])
     } catch (err) {
@@ -44,35 +44,11 @@ export function useTodos() {
     }
   }
 
-  const toggleTodo = async (todo: Todo) => {
-    setTodos((prev) =>
-      prev.map((t) => (t.id === todo.id ? { ...t, completed: !t.completed } : t)),
-    )
+  // Optimistic partial update; reloads from the server on failure
+  const patchTodo = async (todo: Todo, patch: Partial<Todo>) => {
+    setTodos((prev) => prev.map((t) => (t.id === todo.id ? { ...t, ...patch } : t)))
     try {
-      await api(`/${todo.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ completed: !todo.completed }),
-      })
-    } catch (err) {
-      setError((err as Error).message)
-      load()
-    }
-  }
-
-  const updateTitle = async (todo: Todo, title: string) => {
-    setTodos((prev) => prev.map((t) => (t.id === todo.id ? { ...t, title } : t)))
-    try {
-      await api(`/${todo.id}`, { method: 'PATCH', body: JSON.stringify({ title }) })
-    } catch (err) {
-      setError((err as Error).message)
-      load()
-    }
-  }
-
-  const setDueDate = async (todo: Todo, due_date: string | null) => {
-    setTodos((prev) => prev.map((t) => (t.id === todo.id ? { ...t, due_date } : t)))
-    try {
-      await api(`/${todo.id}`, { method: 'PATCH', body: JSON.stringify({ due_date }) })
+      await api(`/${todo.id}`, { method: 'PATCH', body: JSON.stringify(patch) })
     } catch (err) {
       setError((err as Error).message)
       load()
@@ -89,5 +65,5 @@ export function useTodos() {
     }
   }
 
-  return { todos, loading, error, addTodo, toggleTodo, updateTitle, setDueDate, deleteTodo }
+  return { todos, loading, error, addTodo, patchTodo, deleteTodo }
 }

@@ -1,12 +1,12 @@
 import { useState } from 'react'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { Todo } from './types'
 import { dayStr } from './dates'
 
 interface TodoItemProps {
   todo: Todo
-  onToggle: () => void
-  onRename: (title: string) => void
-  onSetDate: (date: string | null) => void
+  onPatch: (patch: Partial<Todo>) => void
   onDelete: () => void
 }
 
@@ -21,29 +21,47 @@ function dueBadge(todo: Todo) {
     >
       {overdue ? 'overdue · ' : ''}
       {todo.due_date}
+      {todo.due_time ? ` · ${todo.due_time}` : ''}
     </span>
   )
 }
 
-export default function TodoItem({ todo, onToggle, onRename, onSetDate, onDelete }: TodoItemProps) {
+export default function TodoItem({ todo, onPatch, onDelete }: TodoItemProps) {
   const [editing, setEditing] = useState(false)
   const [pickingDate, setPickingDate] = useState(false)
   const [draft, setDraft] = useState(todo.title)
 
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: todo.id,
+  })
+
   const commit = () => {
     const trimmed = draft.trim()
-    if (trimmed && trimmed !== todo.title) onRename(trimmed)
+    if (trimmed && trimmed !== todo.title) onPatch({ title: trimmed })
     else setDraft(todo.title)
     setEditing(false)
   }
 
   return (
-    <li className="list-row items-center">
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`list-row items-center ${isDragging ? 'z-10 opacity-60' : ''}`}
+    >
+      <span
+        className="cursor-grab touch-none select-none px-1 text-base-content/40"
+        aria-label={`Drag to reorder "${todo.title}"`}
+        {...attributes}
+        {...listeners}
+      >
+        ⠿
+      </span>
+
       <input
         type="checkbox"
         className="checkbox checkbox-primary"
         checked={todo.completed}
-        onChange={onToggle}
+        onChange={() => onPatch({ completed: !todo.completed })}
         aria-label={`Mark "${todo.title}" as ${todo.completed ? 'not done' : 'done'}`}
       />
 
@@ -66,8 +84,7 @@ export default function TodoItem({ todo, onToggle, onRename, onSetDate, onDelete
       ) : (
         <button
           type="button"
-          className={`text-left w-full ${todo.completed ? 'line-through text-base-content/40' : ''}`}
-          onDoubleClick={() => setEditing(true)}
+          className={`w-full text-left ${todo.completed ? 'line-through text-base-content/40' : ''}`}
           onClick={() => setEditing(true)}
           title="Click to edit"
         >
@@ -78,18 +95,31 @@ export default function TodoItem({ todo, onToggle, onRename, onSetDate, onDelete
       {dueBadge(todo)}
 
       {pickingDate ? (
-        <input
-          type="date"
-          className="input input-xs input-bordered w-32"
-          autoFocus
-          defaultValue={todo.due_date ?? ''}
-          aria-label={`Due date for "${todo.title}"`}
-          onChange={(e) => {
-            onSetDate(e.target.value || null)
-            setPickingDate(false)
-          }}
-          onBlur={() => setPickingDate(false)}
-        />
+        <span className="flex items-center gap-1">
+          <input
+            type="date"
+            className="input input-xs input-bordered w-32"
+            autoFocus
+            defaultValue={todo.due_date ?? ''}
+            aria-label={`Due date for "${todo.title}"`}
+            onChange={(e) => onPatch({ due_date: e.target.value || null })}
+          />
+          <input
+            type="time"
+            className="input input-xs input-bordered w-24"
+            defaultValue={todo.due_time ?? ''}
+            aria-label={`Due time for "${todo.title}"`}
+            onChange={(e) => onPatch({ due_time: e.target.value || null })}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs"
+            onClick={() => setPickingDate(false)}
+            aria-label="Done editing date"
+          >
+            ✓
+          </button>
+        </span>
       ) : (
         <button
           type="button"

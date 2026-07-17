@@ -1,25 +1,19 @@
 import { useState, type FormEvent } from 'react'
 import { useTodos } from './useTodos'
-import TodoItem from './TodoItem'
+import TodoList from './TodoList'
 import { dayStr } from './dates'
 
 // Tasks with no day, or scheduled beyond this week — use each row's 📅 to
 // pull one into the week.
 export default function InboxModule() {
-  const { todos, loading, error, addTodo, toggleTodo, updateTitle, setDueDate, deleteTodo } =
-    useTodos()
+  const { todos, loading, error, addTodo, patchTodo, deleteTodo } = useTodos()
   const [title, setTitle] = useState('')
 
   const sunday = dayStr(-((new Date().getDay() + 6) % 7) + 6)
   const visible = todos
     .filter((t) => !t.due_date || t.due_date > sunday)
     .slice()
-    .sort(
-      (a, b) =>
-        Number(a.completed) - Number(b.completed) ||
-        (a.due_date ?? '').localeCompare(b.due_date ?? '') ||
-        b.created_at.localeCompare(a.created_at),
-    )
+    .sort((a, b) => Number(a.completed) - Number(b.completed) || a.position - b.position)
 
   const handleAdd = async (e: FormEvent) => {
     e.preventDefault()
@@ -70,18 +64,7 @@ export default function InboxModule() {
           </div>
         </div>
       ) : (
-        <ul className="list rounded-box bg-base-100 shadow-sm">
-          {visible.map((todo) => (
-            <TodoItem
-              key={todo.id}
-              todo={todo}
-              onToggle={() => toggleTodo(todo)}
-              onRename={(t) => updateTitle(todo, t)}
-              onSetDate={(d) => setDueDate(todo, d)}
-              onDelete={() => deleteTodo(todo)}
-            />
-          ))}
-        </ul>
+        <TodoList todos={visible} onPatch={patchTodo} onDelete={deleteTodo} />
       )}
     </div>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useTodos } from './useTodos'
-import TodoItem from './TodoItem'
+import TodoList from './TodoList'
 import type { Todo } from './types'
 import { dayStr, longDate, weekdayShort } from './dates'
 
@@ -30,9 +30,9 @@ function makeBuckets(): Bucket[] {
 }
 
 export default function TodosModule() {
-  const { todos, loading, error, addTodo, toggleTodo, updateTitle, setDueDate, deleteTodo } =
-    useTodos()
+  const { todos, loading, error, addTodo, patchTodo, deleteTodo } = useTodos()
   const [title, setTitle] = useState('')
+  const [dueTime, setDueTime] = useState('')
   // null = follow the selected day tab; '' = explicitly no date
   const [dueOverride, setDueOverride] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState(dayStr(0))
@@ -55,12 +55,7 @@ export default function TodosModule() {
       todos
         .filter(selected.match)
         .slice()
-        .sort(
-          (a, b) =>
-            Number(a.completed) - Number(b.completed) ||
-            (a.due_date ?? '').localeCompare(b.due_date ?? '') ||
-            b.created_at.localeCompare(a.created_at),
-        ),
+        .sort((a, b) => Number(a.completed) - Number(b.completed) || a.position - b.position),
     [todos, selected],
   )
 
@@ -68,9 +63,10 @@ export default function TodosModule() {
     e.preventDefault()
     const trimmed = title.trim()
     if (!trimmed) return
-    await addTodo(trimmed, dueDate || null)
+    await addTodo(trimmed, dueDate || null, dueTime || null)
     setTitle('')
     setDueOverride(null)
+    setDueTime('')
   }
 
   const chip = (label: string, value: string) => (
@@ -153,6 +149,13 @@ export default function TodosModule() {
               value={dueDate}
               onChange={(e) => setDueOverride(e.target.value)}
             />
+            <input
+              type="time"
+              className="input input-bordered input-sm w-28"
+              aria-label="Due time"
+              value={dueTime}
+              onChange={(e) => setDueTime(e.target.value)}
+            />
           </div>
         </div>
       </form>
@@ -176,18 +179,7 @@ export default function TodosModule() {
           </div>
         </div>
       ) : (
-        <ul className="list rounded-box bg-base-100 shadow-sm">
-          {visible.map((todo) => (
-            <TodoItem
-              key={todo.id}
-              todo={todo}
-              onToggle={() => toggleTodo(todo)}
-              onRename={(t) => updateTitle(todo, t)}
-              onSetDate={(d) => setDueDate(todo, d)}
-              onDelete={() => deleteTodo(todo)}
-            />
-          ))}
-        </ul>
+        <TodoList todos={visible} onPatch={patchTodo} onDelete={deleteTodo} />
       )}
     </div>
   )
