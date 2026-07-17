@@ -69,6 +69,16 @@ export function useTodos() {
     }
   }
 
+  const setDueDate = async (todo: Todo, due_date: string | null) => {
+    setTodos((prev) => prev.map((t) => (t.id === todo.id ? { ...t, due_date } : t)))
+    try {
+      await api(`/${todo.id}`, { method: 'PATCH', body: JSON.stringify({ due_date }) })
+    } catch (err) {
+      setError((err as Error).message)
+      load()
+    }
+  }
+
   const deleteTodo = async (todo: Todo) => {
     setTodos((prev) => prev.filter((t) => t.id !== todo.id))
     try {
@@ -79,5 +89,5 @@ export function useTodos() {
     }
   }
 
-  return { todos, loading, error, addTodo, toggleTodo, updateTitle, deleteTodo }
+  return { todos, loading, error, addTodo, toggleTodo, updateTitle, setDueDate, deleteTodo }
 }

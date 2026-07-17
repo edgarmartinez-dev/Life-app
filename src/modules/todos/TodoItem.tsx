@@ -6,6 +6,7 @@ interface TodoItemProps {
   todo: Todo
   onToggle: () => void
   onRename: (title: string) => void
+  onSetDate: (date: string | null) => void
   onDelete: () => void
 }
 
@@ -24,8 +25,9 @@ function dueBadge(todo: Todo) {
   )
 }
 
-export default function TodoItem({ todo, onToggle, onRename, onDelete }: TodoItemProps) {
+export default function TodoItem({ todo, onToggle, onRename, onSetDate, onDelete }: TodoItemProps) {
   const [editing, setEditing] = useState(false)
+  const [pickingDate, setPickingDate] = useState(false)
   const [draft, setDraft] = useState(todo.title)
 
   const commit = () => {
@@ -74,6 +76,30 @@ export default function TodoItem({ todo, onToggle, onRename, onDelete }: TodoIte
       )}
 
       {dueBadge(todo)}
+
+      {pickingDate ? (
+        <input
+          type="date"
+          className="input input-xs input-bordered w-32"
+          autoFocus
+          defaultValue={todo.due_date ?? ''}
+          aria-label={`Due date for "${todo.title}"`}
+          onChange={(e) => {
+            onSetDate(e.target.value || null)
+            setPickingDate(false)
+          }}
+          onBlur={() => setPickingDate(false)}
+        />
+      ) : (
+        <button
+          type="button"
+          className="btn btn-ghost btn-xs"
+          onClick={() => setPickingDate(true)}
+          aria-label={`Set due date for "${todo.title}"`}
+        >
+          📅
+        </button>
+      )}
 
       <button
         type="button"

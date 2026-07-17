@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useTodos } from './useTodos'
 import TodoItem from './TodoItem'
 import type { Todo } from './types'
@@ -19,14 +19,13 @@ function makeBuckets(): Bucket[] {
   // Monday of the current week
   const mondayOffset = -((new Date().getDay() + 6) % 7)
   const week = Array.from({ length: 7 }, (_, i) => dayStr(mondayOffset + i))
-  const sunday = week[6]
   return [
     {
-      id: 'past',
-      label: 'Past',
-      title: 'Overdue',
+      id: 'inbox',
+      label: 'Inbox',
+      title: 'Inbox — no day yet',
       date: null,
-      match: (t) => !!t.due_date && t.due_date < today && !t.completed,
+      match: (t: Todo) => !t.due_date,
     },
     ...week.map((d) => ({
       id: d,
@@ -36,25 +35,12 @@ function makeBuckets(): Bucket[] {
       isToday: d === today,
       match: (t: Todo) => t.due_date === d,
     })),
-    {
-      id: 'future',
-      label: 'Future',
-      title: `After ${longDate(sunday)}`,
-      date: null,
-      match: (t) => !!t.due_date && t.due_date > sunday,
-    },
-    {
-      id: 'anytime',
-      label: 'Any',
-      title: 'No due date',
-      date: null,
-      match: (t) => !t.due_date,
-    },
   ]
 }
 
 export default function TodosModule() {
-  const { todos, loading, error, addTodo, toggleTodo, updateTitle, deleteTodo } = useTodos()
+  const { todos, loading, error, addTodo, toggleTodo, updateTitle, setDueDate, deleteTodo } =
+    useTodos()
   const [title, setTitle] = useState('')
   // null = follow the selected day tab; '' = explicitly no date
   const [dueOverride, setDueOverride] = useState<string | null>(null)
@@ -62,8 +48,17 @@ export default function TodosModule() {
 
   const buckets = useMemo(makeBuckets, [])
   const selected = buckets.find((b) => b.id === selectedId) ?? buckets.find((b) => b.isToday)!
-  // Never prefill a past date — clicking Monday on a Wednesday still adds for today
-  const dueDate = dueOverride ?? (selected.date && selected.date >= dayStr(0) ? selected.date : '')
+  // Prefill from the selected tab: Inbox → no date; past weekday → today
+  const dueDate =
+    dueOverride ??
+    (selected.date ? (selected.date >= dayStr(0) ? selected.date : dayStr(0)) : '')
+
+  const stripRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    stripRef.current
+      ?.querySelector('[data-today]')
+      ?.scrollIntoView({ inline: 'center', block: 'nearest' })
+  }, [])
 
   const visible = useMemo(
     () =>
@@ -102,7 +97,7 @@ export default function TodosModule() {
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-bold">To-dos</h1>
 
-      <div className="flex overflow-x-auto rounded-box bg-base-100 shadow-sm">
+      <div ref={stripRef} className="flex overflow-x-auto rounded-box bg-base-100 shadow-sm">
         {buckets.map((b) => {
           const count = todos.filter((t) => !t.completed && b.match(t)).length
           const active = b.id === selected.id
@@ -110,6 +105,7 @@ export default function TodosModule() {
             <button
               key={b.id}
               type="button"
+              data-today={b.isToday || undefined}
               className={`flex min-w-16 flex-1 flex-col items-center gap-0.5 border-b-2 px-3 py-2 ${
                 active ? 'border-primary' : 'border-transparent'
               }`}
@@ -128,7 +124,11 @@ export default function TodosModule() {
               </span>
               <span
                 className={`text-lg font-bold ${
-                  count === 0 ? 'text-base-content/30' : b.id === 'past' ? 'text-error' : ''
+                  count === 0
+                    ? 'text-base-content/30'
+                    : b.date && b.date < dayStr(0)
+                      ? 'text-error'
+                      : ''
                 }`}
               >
                 {count}
@@ -193,6 +193,7 @@ export default function TodosModule() {
               todo={todo}
               onToggle={() => toggleTodo(todo)}
               onRename={(t) => updateTitle(todo, t)}
+              onSetDate={(d) => setDueDate(todo, d)}
               onDelete={() => deleteTodo(todo)}
             />
           ))}
