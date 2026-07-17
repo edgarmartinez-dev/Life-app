@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Todo } from './types'
+import { dayStr } from './dates'
 
 interface TodoItemProps {
   todo: Todo
@@ -10,7 +11,7 @@ interface TodoItemProps {
 
 function dueBadge(todo: Todo) {
   if (!todo.due_date || todo.completed) return null
-  const today = new Date().toISOString().slice(0, 10)
+  const today = dayStr()
   const overdue = todo.due_date < today
   const isToday = todo.due_date === today
   return (

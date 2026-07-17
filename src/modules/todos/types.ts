@@ -5,5 +5,3 @@ export interface Todo {
   due_date: string | null
   created_at: string
 }
-
-export type TodoFilter = 'all' | 'active' | 'completed'
