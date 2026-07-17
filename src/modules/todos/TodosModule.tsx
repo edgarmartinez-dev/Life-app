@@ -9,14 +9,17 @@ interface Bucket {
   label: string
   title: string
   date: string | null // concrete day → prefills the add form
+  isToday?: boolean
   match: (t: Todo) => boolean
 }
 
 // ponytail: buckets are computed once per mount — reopen the app after midnight
 function makeBuckets(): Bucket[] {
   const today = dayStr(0)
-  const week = [1, 2, 3, 4].map((n) => dayStr(n))
-  const last = week[week.length - 1]
+  // Monday of the current week
+  const mondayOffset = -((new Date().getDay() + 6) % 7)
+  const week = Array.from({ length: 7 }, (_, i) => dayStr(mondayOffset + i))
+  const sunday = week[6]
   return [
     {
       id: 'past',
@@ -25,26 +28,20 @@ function makeBuckets(): Bucket[] {
       date: null,
       match: (t) => !!t.due_date && t.due_date < today && !t.completed,
     },
-    {
-      id: 'today',
-      label: 'Today',
-      title: `Due: ${longDate(today)}`,
-      date: today,
-      match: (t) => t.due_date === today,
-    },
-    ...week.map((d, i) => ({
+    ...week.map((d) => ({
       id: d,
-      label: i === 0 ? 'Tmrw' : weekdayShort(d),
+      label: weekdayShort(d),
       title: `Due: ${longDate(d)}`,
       date: d,
+      isToday: d === today,
       match: (t: Todo) => t.due_date === d,
     })),
     {
       id: 'future',
       label: 'Future',
-      title: 'Future',
+      title: `After ${longDate(sunday)}`,
       date: null,
-      match: (t) => !!t.due_date && t.due_date > last,
+      match: (t) => !!t.due_date && t.due_date > sunday,
     },
     {
       id: 'anytime',
@@ -61,11 +58,12 @@ export default function TodosModule() {
   const [title, setTitle] = useState('')
   // null = follow the selected day tab; '' = explicitly no date
   const [dueOverride, setDueOverride] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState('today')
+  const [selectedId, setSelectedId] = useState(dayStr(0))
 
   const buckets = useMemo(makeBuckets, [])
-  const selected = buckets.find((b) => b.id === selectedId) ?? buckets[1]
-  const dueDate = dueOverride ?? selected.date ?? ''
+  const selected = buckets.find((b) => b.id === selectedId) ?? buckets.find((b) => b.isToday)!
+  // Never prefill a past date — clicking Monday on a Wednesday still adds for today
+  const dueDate = dueOverride ?? (selected.date && selected.date >= dayStr(0) ? selected.date : '')
 
   const visible = useMemo(
     () =>
@@ -118,9 +116,15 @@ export default function TodosModule() {
               onClick={() => setSelectedId(b.id)}
             >
               <span
-                className={`text-xs ${active ? 'font-semibold text-primary' : 'text-base-content/60'}`}
+                className={`text-xs ${
+                  active
+                    ? 'font-semibold text-primary'
+                    : b.isToday
+                      ? 'font-semibold text-base-content'
+                      : 'text-base-content/60'
+                }`}
               >
-                {b.label}
+                {b.isToday ? `● ${b.label}` : b.label}
               </span>
               <span
                 className={`text-lg font-bold ${
