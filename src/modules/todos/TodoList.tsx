@@ -29,9 +29,16 @@ export default function TodoList({ todos, onPatch, onDelete }: TodoListProps) {
     const moved = todos[oldIndex]
     const reordered = arrayMove(todos, oldIndex, newIndex)
     // fractional position between the new neighbours — positions are global,
-    // so ordering holds in every view that sorts by position
-    const prev = reordered[newIndex - 1]?.position
-    const next = reordered[newIndex + 1]?.position
+    // so ordering holds in every view that sorts by position. Neighbours must
+    // share the item's completed status: lists sort by (completed, position),
+    // so a completed row's position says nothing about where an active row lands
+    const prev = reordered
+      .slice(0, newIndex)
+      .reverse()
+      .find((t) => t.completed === moved.completed)?.position
+    const next = reordered
+      .slice(newIndex + 1)
+      .find((t) => t.completed === moved.completed)?.position
     const position =
       prev === undefined && next === undefined
         ? 0
@@ -43,20 +50,35 @@ export default function TodoList({ todos, onPatch, onDelete }: TodoListProps) {
     onPatch(moved, { position })
   }
 
+  const active = todos.filter((t) => !t.completed)
+  const done = todos.filter((t) => t.completed)
+
+  const renderList = (items: Todo[]) => (
+    <SortableContext items={items.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+      <ul className="list rounded-box bg-base-100 shadow-sm">
+        {items.map((todo) => (
+          <TodoItem
+            key={todo.id}
+            todo={todo}
+            onPatch={(p) => onPatch(todo, p)}
+            onDelete={() => onDelete(todo)}
+          />
+        ))}
+      </ul>
+    </SortableContext>
+  )
+
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={todos.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <ul className="list rounded-box bg-base-100 shadow-sm">
-          {todos.map((todo) => (
-            <TodoItem
-              key={todo.id}
-              todo={todo}
-              onPatch={(p) => onPatch(todo, p)}
-              onDelete={() => onDelete(todo)}
-            />
-          ))}
-        </ul>
-      </SortableContext>
+      {active.length > 0 && renderList(active)}
+      {done.length > 0 && (
+        <details className="collapse collapse-arrow bg-base-100 shadow-sm">
+          <summary className="collapse-title text-sm text-base-content/60">
+            Completed ({done.length})
+          </summary>
+          <div className="collapse-content p-0">{renderList(done)}</div>
+        </details>
+      )}
     </DndContext>
   )
 }
